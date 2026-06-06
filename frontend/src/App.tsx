@@ -7,18 +7,31 @@ const USER_KEY = 'secret-react-user-key';
 // Логика сортировки (0 - самый критичный)
 const PRIORITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-// Временный хардкод тикетов (пока не подключите реальный ERP)
-const HARDCODED_TICKETS = [
-  { id: 1042, title: 'Web server nginx not responding', priority: 'CRITICAL', status: 'OPEN', customer_id: 201 },
-  { id: 1041, title: 'SSH authentication failures', priority: 'HIGH', status: 'OPEN', customer_id: 202 },
-  { id: 1039, title: 'DNS resolution intermittent', priority: 'MEDIUM', status: 'OPEN', customer_id: 204 },
-];
+
 
 export default function App() {
   const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>('https://sflvr.app.n8n.cloud/webhook-test/troubleshoot-ticket');
-  const [tickets, setTickets] = useState(HARDCODED_TICKETS);
+  const [tickets, setTickets] = useState<any[]>([]);
+  // Загружаем реальные тикеты из бэкенда при открытии страницы
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/tickets`, {
+          headers: { 'X-API-Key': USER_KEY }
+        });
+        const data = await res.json();
+        if (data.tickets && data.tickets.length > 0) {
+          setTickets(data.tickets);
+        } else {
+          console.error("Тикеты не найдены или произошла ошибка:", data);
+        }
+      } catch (e) {
+        console.error("Ошибка запроса тикетов:", e);
+      }
+    };
+    fetchTickets();
+  }, []);
   const [activeTicketId, setActiveTicketId] = useState<number | null>(null);
-
   const [isRunning, setIsRunning] = useState(false);
   const [proposal, setProposal] = useState<any>(null);
   const [editCommand, setEditCommand] = useState<string>('');

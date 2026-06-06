@@ -8,6 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import glob
+import sys
+from .erp import list_tickets
+# Добавляем корневую папку backend в пути, чтобы main.py увидел erp.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 # Настраиваем базовое логирование, чтобы видеть ошибки в консоли Docker
 logging.basicConfig(level=logging.INFO)
