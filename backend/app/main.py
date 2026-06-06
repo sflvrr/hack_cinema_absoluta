@@ -165,6 +165,20 @@ async def get_audit_log(ticket_id: int, api_key: str = Depends(verify_admin)):
 # ==========================================
 # 2. ЭНДПОИНТЫ ДЛЯ FRONTEND (ПОЛЬЗОВАТЕЛЬ)
 # ==========================================
+# Если еще не добавил импорт сверху, добавь:
+# from .erp import list_tickets
+
+@app.get("/api/tickets")
+async def get_all_tickets(api_key: str = Depends(verify_user)):
+    """Фронтенд запрашивает этот эндпоинт, чтобы получить реальные тикеты из ERP"""
+    try:
+        # Убедись, что функция list_tickets() импортирована из erp.py
+        tickets = await list_tickets()
+        return {"status": "ok", "tickets": tickets}
+    except Exception as e:
+        logger.error(f"Ошибка получения тикетов из ERP: {e}")
+        # Если erp.py падает, возвращаем хотя бы пустой список, чтобы фронт не ломался
+        return {"status": "error", "tickets": [], "detail": str(e)}
 
 @app.get("/api/tickets/{ticket_id}/proposal")
 async def get_current_proposal(ticket_id: int, api_key: str = Depends(verify_user)):

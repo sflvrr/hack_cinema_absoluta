@@ -75,13 +75,19 @@ export default function App() {
   }, [isRunning, activeTicketId, proposal]);
 
   const handleStartAgent = async () => {
+    // ЗАЩИТА: Если тикет не выбран, ничего не делаем
+    if (activeTicketId === null) {
+      alert("Сначала выберите тикет из списка!");
+      return;
+    }
+
     setIsRunning(true);
     setLogs([`[SYSTEM] Запуск ИИ-агента для тикета #${activeTicketId}...`]);
     try {
       await fetch(n8nWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket_id: activeTicketId })
+        body: JSON.stringify({ ticket_id: activeTicketId }) // Теперь тут точно не null
       });
       setLogs(p => [...p, `[SYSTEM] Агент работает. Ожидание диагностики...`]);
     } catch (e) {
