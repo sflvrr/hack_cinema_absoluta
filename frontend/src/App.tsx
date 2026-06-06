@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 
 // URL нашего бэкенда (из Docker или локальный)
+// @ts-ignore
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 // Ключ доступа для фронтенда (как мы прописали в main.py)
 const USER_KEY = 'secret-react-user-key';
