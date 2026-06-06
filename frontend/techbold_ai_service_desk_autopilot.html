@@ -1,0 +1,673 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f14;
+    --bg2: #131720;
+    --bg3: #1a1f2e;
+    --bg4: #1f2535;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #e8eaf0;
+    --text2: #8892a4;
+    --text3: #4e5769;
+    --accent: #4f9cf9;
+    --accent2: #3b82f6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --orange: #f97316;
+    --purple: #a855f7;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; }
+
+  .app { display: flex; flex-direction: column; height: 100vh; min-height: 600px; overflow: hidden; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px; height: 44px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar-logo { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
+  .topbar-logo span { color: var(--text2); font-weight: 400; }
+  .topbar-pill {
+    background: rgba(79,156,249,0.1); color: var(--accent);
+    font-size: 10px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 20px; border: 1px solid rgba(79,156,249,0.25);
+  }
+  .topbar-spacer { flex: 1; }
+  .topbar-stat { font-size: 11px; color: var(--text2); margin-right: 12px; }
+  .topbar-stat strong { color: var(--text); font-weight: 600; }
+  .btn-reset {
+    font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+    background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.3);
+    padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-reset:hover { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); }
+  .btn-reset.loading { opacity: 0.6; cursor: not-allowed; }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  .sidebar {
+    width: 280px; flex-shrink: 0; background: var(--bg2);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 12px 14px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .sidebar-title { font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text2); margin-bottom: 8px; }
+
+  .filter-row { display: flex; gap: 6px; }
+  .filter-select {
+    font-family: var(--sans); font-size: 11px; background: var(--bg3);
+    color: var(--text2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; cursor: pointer; flex: 1;
+  }
+  .filter-select:focus { outline: none; border-color: var(--accent); color: var(--text); }
+
+  .ticket-list { overflow-y: auto; flex: 1; }
+  .ticket-list::-webkit-scrollbar { width: 4px; }
+  .ticket-list::-webkit-scrollbar-track { background: transparent; }
+  .ticket-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .ticket-item {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: background 0.1s; display: flex; flex-direction: column; gap: 4px;
+  }
+  .ticket-item:hover { background: var(--bg3); }
+  .ticket-item.active { background: rgba(79,156,249,0.06); border-left: 2px solid var(--accent); padding-left: 12px; }
+
+  .ticket-row1 { display: flex; align-items: center; gap: 6px; }
+  .ticket-id { font-family: var(--mono); font-size: 10px; color: var(--text3); flex-shrink: 0; }
+  .priority-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .priority-dot.CRITICAL { background: var(--red); box-shadow: 0 0 5px rgba(239,68,68,0.6); }
+  .priority-dot.HIGH { background: var(--orange); }
+  .priority-dot.MEDIUM { background: var(--yellow); }
+  .priority-dot.LOW { background: var(--green); }
+  .ticket-title { font-size: 12px; font-weight: 500; color: var(--text); line-height: 1.3; flex: 1; }
+  .ticket-row2 { display: flex; align-items: center; gap: 6px; }
+  .status-badge {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .status-badge.OPEN { background: rgba(79,156,249,0.15); color: #60a5fa; }
+  .status-badge.PENDING { background: rgba(234,179,8,0.15); color: #fbbf24; }
+  .status-badge.DONE { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .priority-label { font-size: 10px; color: var(--text3); }
+
+  .workspace { flex: 1; display: flex; overflow: hidden; }
+
+  .ticket-detail {
+    width: 240px; flex-shrink: 0; background: var(--bg2);
+    border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .ticket-detail::-webkit-scrollbar { width: 4px; }
+  .ticket-detail::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .detail-section { padding: 14px; border-bottom: 1px solid var(--border); }
+  .detail-label { font-size: 10px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+  .detail-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.4; margin-bottom: 8px; }
+  .detail-field { margin-bottom: 8px; }
+  .detail-field-key { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+  .detail-field-val { font-family: var(--mono); font-size: 11px; color: var(--text2); word-break: break-all; }
+  .detail-notes { font-size: 11px; color: var(--text2); line-height: 1.6; background: var(--bg3); padding: 8px; border-radius: 6px; border: 1px solid var(--border); }
+
+  .priority-badge-lg {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.3px; padding: 3px 10px; border-radius: 6px;
+  }
+  .priority-badge-lg.CRITICAL { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .priority-badge-lg.HIGH { background: rgba(249,115,22,0.15); color: #fdba74; border: 1px solid rgba(249,115,22,0.3); }
+  .priority-badge-lg.MEDIUM { background: rgba(234,179,8,0.15); color: #fde047; border: 1px solid rgba(234,179,8,0.3); }
+  .priority-badge-lg.LOW { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+
+  .terminal-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+
+  .terminal-header {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .terminal-header-title { font-size: 12px; font-weight: 600; color: var(--text2); flex: 1; }
+  .running-indicator {
+    display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--accent);
+  }
+  .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s infinite; }
+  .pulse-dot.green { background: var(--green); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .terminal-body { flex: 1; overflow-y: auto; padding: 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .terminal-body::-webkit-scrollbar { width: 4px; }
+  .terminal-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .step-block { margin-bottom: 16px; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  .step-thought {
+    background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.2);
+    border-radius: 6px; padding: 8px 12px; margin-bottom: 8px;
+    color: #c084fc; font-size: 11px; line-height: 1.6; font-family: var(--sans);
+  }
+  .step-thought-label { font-size: 10px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(168,85,247,0.7); margin-bottom: 4px; }
+
+  .step-command {
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 8px 12px; display: flex; align-items: flex-start; gap: 8px;
+  }
+  .step-command-prompt { color: var(--green); flex-shrink: 0; }
+  .step-command-text { color: #93c5fd; flex: 1; word-break: break-all; }
+
+  .step-output {
+    background: var(--bg3); border-left: 2px solid var(--border2);
+    margin-top: 6px; padding: 6px 10px; color: var(--text2); font-size: 11px; line-height: 1.6;
+  }
+  .step-output.success { border-left-color: var(--green); color: #86efac; }
+  .step-output.failed { border-left-color: var(--red); color: #fca5a5; }
+
+  .step-status-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; }
+  .step-status { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+  .step-status.running { background: rgba(79,156,249,0.15); color: #60a5fa; }
+  .step-status.completed { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .step-status.failed { background: rgba(239,68,68,0.15); color: #f87171; }
+  .step-status.rejected { background: rgba(234,179,8,0.15); color: #fbbf24; }
+  .step-status.pending_approval { background: rgba(249,115,22,0.15); color: #fdba74; }
+
+  .action-panel {
+    background: var(--bg2); border-top: 1px solid rgba(249,115,22,0.3);
+    padding: 12px 14px; flex-shrink: 0;
+  }
+  .action-panel-header { font-size: 11px; font-weight: 600; color: var(--orange); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .action-command-display {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px;
+    padding: 8px 12px; font-family: var(--mono); font-size: 12px; color: #93c5fd; margin-bottom: 10px;
+    word-break: break-all;
+  }
+  .action-edit-input {
+    width: 100%; background: var(--bg3); border: 1px solid var(--accent2); border-radius: 6px;
+    padding: 7px 12px; font-family: var(--mono); font-size: 12px; color: #93c5fd;
+    margin-bottom: 10px; outline: none;
+  }
+  .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-action {
+    font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; border: 1px solid; transition: all 0.15s;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .btn-approve { background: rgba(34,197,94,0.1); color: #4ade80; border-color: rgba(34,197,94,0.35); }
+  .btn-approve:hover { background: rgba(34,197,94,0.2); }
+  .btn-modify { background: rgba(79,156,249,0.1); color: #60a5fa; border-color: rgba(79,156,249,0.35); }
+  .btn-modify:hover { background: rgba(79,156,249,0.2); }
+  .btn-reject { background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.35); }
+  .btn-reject:hover { background: rgba(239,68,68,0.2); }
+
+  .countdown-bar-wrap { background: var(--bg3); border-radius: 4px; height: 3px; margin-top: 8px; overflow: hidden; }
+  .countdown-bar { height: 100%; background: var(--orange); border-radius: 4px; transition: width 1s linear; }
+
+  .no-ticket {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text3); gap: 8px;
+  }
+  .no-ticket i { font-size: 32px; }
+  .no-ticket p { font-size: 13px; }
+
+  .activity-form-pane {
+    flex: 1; overflow-y: auto; background: var(--bg);
+    padding: 20px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .activity-form-pane::-webkit-scrollbar { width: 4px; }
+  .activity-form-pane::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .form-section-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.7px; text-transform: uppercase;
+    color: var(--text3); margin-bottom: 4px;
+  }
+  .form-field label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+  .form-field input, .form-field textarea {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 7px 10px; font-family: var(--sans); font-size: 12px;
+    color: var(--text); outline: none; resize: vertical;
+    transition: border-color 0.15s;
+  }
+  .form-field input:focus, .form-field textarea:focus { border-color: var(--accent); }
+  .form-field textarea { min-height: 60px; }
+  .form-code-field {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px;
+    padding: 8px 10px; font-family: var(--mono); font-size: 11px; color: #93c5fd; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-all; margin-bottom: 6px;
+  }
+  .checklist-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .checklist-item input[type=checkbox] { accent-color: var(--green); width: 14px; height: 14px; }
+  .checklist-item label { font-size: 12px; color: var(--text2); }
+
+  .btn-resolve {
+    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: 0.3px;
+    background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(79,156,249,0.15));
+    color: #4ade80; border: 1px solid rgba(34,197,94,0.4); padding: 10px 24px;
+    border-radius: 8px; cursor: pointer; transition: all 0.2s; width: 100%;
+  }
+  .btn-resolve:hover { background: linear-gradient(135deg, rgba(34,197,94,0.3), rgba(79,156,249,0.2)); border-color: rgba(34,197,94,0.6); }
+
+  .view-tabs { display: flex; gap: 2px; padding: 6px 14px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .view-tab {
+    font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
+    padding: 4px 12px; border-radius: 5px; cursor: pointer; color: var(--text3);
+    background: transparent; border: none; transition: all 0.15s;
+  }
+  .view-tab.active { background: var(--bg3); color: var(--text); }
+  .view-tab:hover:not(.active) { color: var(--text2); }
+
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--border2);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; bottom: 16px; right: 16px; z-index: 999;
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 8px;
+    padding: 10px 16px; font-size: 12px; color: var(--text); animation: slideUp 0.2s ease;
+    display: flex; align-items: center; gap: 8px;
+  }
+  @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+
+<h2 class="sr-only">TechBold AI Service Desk Autopilot — technician interface for managing and resolving IT support tickets with AI-assisted troubleshooting</h2>
+
+<div class="app" id="app">
+  <div class="topbar">
+    <span class="topbar-logo">techbold <span>· autopilot</span></span>
+    <span class="topbar-pill">AI AGENT</span>
+    <span class="topbar-spacer"></span>
+    <span class="topbar-stat" id="stat-open"><strong>0</strong> open</span>
+    <span class="topbar-stat" id="stat-critical"><strong>0</strong> critical</span>
+    <button class="btn-reset" id="btn-reset" onclick="resetEnv()">⟳ Reset Environment</button>
+  </div>
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Ticket Queue</div>
+        <div class="filter-row">
+          <select class="filter-select" id="filter-status" onchange="renderTickets()">
+            <option value="">All Status</option>
+            <option value="OPEN">Open</option>
+            <option value="PENDING">Pending</option>
+            <option value="DONE">Done</option>
+          </select>
+          <select class="filter-select" id="filter-sort" onchange="renderTickets()">
+            <option value="priority">Priority ↑</option>
+            <option value="id">ID</option>
+            <option value="status">Status</option>
+          </select>
+        </div>
+      </div>
+      <div class="ticket-list" id="ticket-list"></div>
+    </div>
+
+    <div class="workspace" id="workspace">
+      <div class="no-ticket" id="no-ticket-msg">
+        <i class="ti ti-device-laptop" aria-hidden="true"></i>
+        <p>Select a ticket to begin</p>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast-container"></div>
+
+<script>
+const PRIORITY_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+const PRIORITY_COLORS = { CRITICAL: '#f87171', HIGH: '#fdba74', MEDIUM: '#fde047', LOW: '#86efac' };
+
+const TICKETS = [
+  { id: 1042, title: 'Web server nginx not responding after kernel update', priority: 'CRITICAL', status: 'OPEN', customer_id: 201 },
+  { id: 1041, title: 'SSH authentication failures — brute force suspected', priority: 'HIGH', status: 'OPEN', customer_id: 202 },
+  { id: 1040, title: 'PostgreSQL replication lag exceeding 30 seconds', priority: 'HIGH', status: 'PENDING', customer_id: 203 },
+  { id: 1039, title: 'DNS resolution intermittent on internal network', priority: 'MEDIUM', status: 'OPEN', customer_id: 204 },
+  { id: 1038, title: 'Disk usage at 94% on /var partition', priority: 'MEDIUM', status: 'PENDING', customer_id: 201 },
+  { id: 1037, title: 'Cron jobs silently failing — no error output', priority: 'LOW', status: 'OPEN', customer_id: 205 },
+  { id: 1036, title: 'SSL certificate expiry in 3 days', priority: 'HIGH', status: 'DONE', customer_id: 203 },
+  { id: 1035, title: 'Systemd service restart loop detected', priority: 'MEDIUM', status: 'DONE', customer_id: 202 },
+];
+
+const SYSTEMS = {
+  201: { ip: '10.0.1.42', port: 22, username: 'admin', os: 'Ubuntu 22.04 LTS', notes: 'Production web cluster node 1. Runs nginx + certbot. Sensitive — avoid service restarts during business hours (09:00–18:00 CET).' },
+  202: { ip: '10.0.2.17', port: 2222, username: 'sysadmin', os: 'Debian 12 Bookworm', notes: 'Auth server. Hosts LDAP and fail2ban. SSH on non-standard port 2222. Root login disabled.' },
+  203: { ip: '10.0.3.88', port: 22, username: 'postgres', os: 'CentOS Stream 9', notes: 'Database primary. Replicas at .89 and .90. Always check replication status before any write operations.' },
+  204: { ip: '10.0.4.5', port: 22, username: 'netadmin', os: 'Ubuntu 20.04 LTS', notes: 'DNS + DHCP server. Hosts bind9 and isc-dhcp-server. Changes affect entire internal subnet.' },
+  205: { ip: '10.0.5.23', port: 22, username: 'devops', os: 'Rocky Linux 9', notes: 'CI/CD runner node. Hosts Jenkins and cron tasks. Log output goes to /var/log/ci/.' },
+};
+
+const AGENT_STEPS = {
+  1042: [
+    { thought: 'Ticket indicates nginx is unresponsive post kernel update. I should first check the service status and review recent system logs to understand the failure mode.', command: 'systemctl status nginx && journalctl -u nginx --since "1 hour ago" --no-pager', status: 'completed', output: '● nginx.service - A high performance web server\n   Loaded: loaded (/lib/systemd/system/nginx.service)\n   Active: failed (Result: exit-code)\n   ...\nModule nf_tables version mismatch: kernel 5.15.0-91, module 5.15.0-89' },
+    { thought: 'Kernel module mismatch detected. The nginx build was linked against older kernel headers. Need to reinstall nginx against the current kernel and check if iptables rules are intact.', command: 'apt-get install --reinstall nginx && nginx -t && iptables -L -n | head -20', status: 'pending_approval', output: '' },
+  ],
+  1041: [
+    { thought: 'Multiple SSH authentication failures suggest brute force. Let me check auth logs and fail2ban status to quantify the threat and confirm defenses are active.', command: 'grep "Failed password" /var/log/auth.log | tail -20 && fail2ban-client status sshd', status: 'completed', output: '2024-01-15 03:21:44 Failed password for root from 185.220.101.47\n2024-01-15 03:21:45 Failed password for root from 185.220.101.47\n...\nStatus for the jail: sshd\n|- Filter: Currently failed: 47 | Total failed: 892\n`- Actions: Currently banned: 3' },
+    { thought: 'fail2ban is active but attacker IP 185.220.101.47 appears across 847 attempts. I should immediately ban this IP at the firewall level and increase the ban duration.', command: 'iptables -I INPUT -s 185.220.101.47 -j DROP && fail2ban-client set sshd bantime 86400', status: 'pending_approval', output: '' },
+  ],
+  1039: [
+    { thought: 'DNS intermittency could be bind9 configuration, resource exhaustion, or upstream resolver issues. Starting with service health and query statistics.', command: 'systemctl status bind9 && rndc stats && tail -30 /var/log/syslog | grep named', status: 'completed', output: '● bind9.service - BIND Domain Name Server\n   Active: active (running)\n...\n++ Statistics Dump +++ (1705286400)\n  success 148291\n  nxdomain 3421\n  recursion 142107\n  duplicate 891\n-- Memory in use: 187MB / 256MB limit' },
+    { thought: 'Memory usage at 72% and high recursion count. The recursive query rate is likely causing intermittent timeouts. Should increase memory limits and review forwarders configuration.', command: 'cat /etc/bind/named.conf.options | grep -A5 "forwarders" && named-checkconf -p | grep "max-cache"', status: 'completed', output: 'forwarders {\n  8.8.8.8;\n  1.1.1.1;\n};\nrecursion yes;\n// max-cache-size not set — using default 32MB' },
+    { thought: 'max-cache-size is at default 32MB which is insufficient for this load. Increasing to 128MB and adding rate limiting should resolve intermittency.', command: "sed -i 's/options {/options {\\n\\tmax-cache-size 128m;\\n\\trate-limit { responses-per-second 15; };/' /etc/bind/named.conf.options && systemctl reload bind9", status: 'pending_approval', output: '' },
+  ],
+};
+
+let activeTicketId = null;
+let activeTab = 'terminal';
+let editingCommand = false;
+let editCommandValue = '';
+let countdownInterval = null;
+let countdownVal = 30;
+
+function renderTickets() {
+  const statusFilter = document.getElementById('filter-status').value;
+  const sortBy = document.getElementById('filter-sort').value;
+  let tickets = [...TICKETS];
+  if (statusFilter) tickets = tickets.filter(t => t.status === statusFilter);
+  if (sortBy === 'priority') tickets.sort((a,b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+  else if (sortBy === 'id') tickets.sort((a,b) => b.id - a.id);
+  else if (sortBy === 'status') tickets.sort((a,b) => a.status.localeCompare(b.status));
+
+  const open = TICKETS.filter(t => t.status === 'OPEN').length;
+  const critical = TICKETS.filter(t => t.priority === 'CRITICAL' && t.status !== 'DONE').length;
+  document.getElementById('stat-open').innerHTML = `<strong>${open}</strong> open`;
+  document.getElementById('stat-critical').innerHTML = `<strong>${critical}</strong> critical`;
+
+  const el = document.getElementById('ticket-list');
+  el.innerHTML = '';
+  tickets.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'ticket-item' + (t.id === activeTicketId ? ' active' : '');
+    div.onclick = () => selectTicket(t.id);
+    div.innerHTML = `
+      <div class="ticket-row1">
+        <span class="ticket-id">#${t.id}</span>
+        <span class="priority-dot ${t.priority}"></span>
+        <span class="ticket-title">${t.title}</span>
+      </div>
+      <div class="ticket-row2">
+        <span class="status-badge ${t.status}">${t.status}</span>
+        <span class="priority-label">${t.priority}</span>
+      </div>
+    `;
+    el.appendChild(div);
+  });
+}
+
+function selectTicket(id) {
+  activeTicketId = id;
+  activeTab = 'terminal';
+  editingCommand = false;
+  clearInterval(countdownInterval);
+  renderTickets();
+  renderWorkspace();
+}
+
+function renderWorkspace() {
+  const ws = document.getElementById('workspace');
+  const ticket = TICKETS.find(t => t.id === activeTicketId);
+  if (!ticket) {
+    ws.innerHTML = '<div class="no-ticket" id="no-ticket-msg"><i class="ti ti-device-laptop" aria-hidden="true"></i><p>Select a ticket to begin</p></div>';
+    return;
+  }
+  const sys = SYSTEMS[ticket.customer_id];
+  const steps = AGENT_STEPS[activeTicketId] || [];
+  const pendingStep = steps.find(s => s.status === 'pending_approval');
+  const isRunning = steps.some(s => s.status === 'running');
+
+  ws.innerHTML = `
+    <div class="ticket-detail">
+      <div class="detail-section">
+        <div class="detail-label">Ticket ${ticket.id}</div>
+        <div class="detail-title">${ticket.title}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <span class="priority-badge-lg ${ticket.priority}">
+            <span class="priority-dot ${ticket.priority}" style="width:7px;height:7px"></span>
+            ${ticket.priority}
+          </span>
+          <span class="status-badge ${ticket.status}" style="padding:3px 8px;border-radius:6px;font-size:11px">${ticket.status}</span>
+        </div>
+      </div>
+      ${sys ? `<div class="detail-section">
+        <div class="detail-label">Target System</div>
+        <div class="detail-field"><div class="detail-field-key">IP Address</div><div class="detail-field-val">${sys.ip}</div></div>
+        <div class="detail-field"><div class="detail-field-key">SSH Port</div><div class="detail-field-val">${sys.port}</div></div>
+        <div class="detail-field"><div class="detail-field-key">Username</div><div class="detail-field-val">${sys.username}</div></div>
+        <div class="detail-field"><div class="detail-field-key">OS</div><div class="detail-field-val">${sys.os}</div></div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-label">Notes</div>
+        <div class="detail-notes">${sys.notes}</div>
+      </div>` : ''}
+    </div>
+    <div class="terminal-pane">
+      <div class="terminal-header">
+        <div class="terminal-header-title">${sys ? sys.username + '@' + sys.ip : 'Agent Console'}</div>
+        ${isRunning ? '<div class="running-indicator"><span class="pulse-dot"></span> Executing command…</div>' : ''}
+        ${pendingStep ? '<div class="running-indicator" style="color:var(--orange)"><span class="pulse-dot" style="background:var(--orange)"></span> Awaiting approval</div>' : ''}
+      </div>
+      <div class="view-tabs">
+        <button class="view-tab ${activeTab==='terminal'?'active':''}" onclick="switchTab('terminal')">Agent Log</button>
+        <button class="view-tab ${activeTab==='form'?'active':''}" onclick="switchTab('form')">Documentation</button>
+      </div>
+      <div id="tab-content" style="flex:1;display:flex;flex-direction:column;overflow:hidden"></div>
+      ${pendingStep && activeTab==='terminal' ? renderActionPanel(pendingStep) : ''}
+    </div>
+  `;
+  renderTabContent();
+  if (pendingStep && activeTab === 'terminal') startCountdown();
+}
+
+function renderTabContent() {
+  const el = document.getElementById('tab-content');
+  if (!el) return;
+  if (activeTab === 'terminal') {
+    el.innerHTML = renderTerminal();
+    setTimeout(() => { el.scrollTop = el.scrollHeight; }, 50);
+  } else {
+    el.innerHTML = renderActivityForm();
+  }
+}
+
+function renderTerminal() {
+  const steps = AGENT_STEPS[activeTicketId] || [];
+  if (!steps.length) return '<div class="terminal-body"><span style="color:var(--text3)">Agent initializing…</span></div>';
+  return `<div class="terminal-body" id="terminal-body">${steps.map((s, i) => `
+    <div class="step-block">
+      <div class="step-thought">
+        <div class="step-thought-label">🧠 Agent Reasoning — Step ${i+1}</div>
+        ${s.thought}
+      </div>
+      <div class="step-command">
+        <span class="step-command-prompt">$</span>
+        <span class="step-command-text">${s.command}</span>
+      </div>
+      <div class="step-status-row">
+        <span class="step-status ${s.status}">${s.status.replace('_',' ')}</span>
+        ${s.status === 'running' ? '<span class="spinner"></span>' : ''}
+      </div>
+      ${s.output ? `<div class="step-output ${s.status === 'completed' ? 'success' : s.status === 'failed' ? 'failed' : ''}">${s.output}</div>` : ''}
+    </div>
+  `).join('')}</div>`;
+}
+
+function renderActionPanel(step) {
+  const cmd = editingCommand ? editCommandValue : step.command;
+  return `<div class="action-panel" id="action-panel">
+    <div class="action-panel-header">
+      <i class="ti ti-alert-triangle" style="font-size:14px" aria-hidden="true"></i>
+      Agent proposes command — review before execution
+    </div>
+    ${editingCommand
+      ? `<input class="action-edit-input" id="edit-cmd-input" value="${cmd.replace(/"/g,'&quot;')}" oninput="editCommandValue=this.value" />`
+      : `<div class="action-command-display">${cmd}</div>`
+    }
+    <div class="action-buttons">
+      <button class="btn-action btn-approve" onclick="approveStep()"><i class="ti ti-player-play" aria-hidden="true"></i> Approve & Execute</button>
+      <button class="btn-action btn-modify" onclick="toggleEdit()">${editingCommand ? '<i class="ti ti-check" aria-hidden="true"></i> Save Edit' : '<i class="ti ti-edit" aria-hidden="true"></i> Modify Command'}</button>
+      <button class="btn-action btn-reject" onclick="rejectStep()"><i class="ti ti-x" aria-hidden="true"></i> Reject / Abort</button>
+    </div>
+    <div class="countdown-bar-wrap"><div class="countdown-bar" id="countdown-bar" style="width:100%"></div></div>
+    <div style="font-size:10px;color:var(--text3);margin-top:4px">Auto-timeout in <span id="countdown-num">30</span>s — no action taken</div>
+  </div>`;
+}
+
+function renderActivityForm() {
+  const ticket = TICKETS.find(t => t.id === activeTicketId);
+  const steps = AGENT_STEPS[activeTicketId] || [];
+  const cmds = steps.filter(s => s.status === 'completed').map(s => '$ ' + s.command).join('\n');
+  return `<div class="activity-form-pane">
+    <div class="form-section-title">Resolution Documentation</div>
+    <div class="form-field">
+      <label>Summary</label>
+      <input type="text" value="${ticket ? ticket.title : ''}" placeholder="Brief summary of the issue and resolution" />
+    </div>
+    <div class="form-field">
+      <label>Root Cause</label>
+      <textarea placeholder="Describe the root cause identified during investigation…">Kernel module version mismatch following unattended upgrade to kernel 5.15.0-91. nginx binary was linked against 5.15.0-89 nf_tables module.</textarea>
+    </div>
+    <div class="form-field">
+      <label>Actions Taken</label>
+      <textarea placeholder="Describe remediation steps taken…">1. Identified kernel/module mismatch via journalctl\n2. Reinstalled nginx against current kernel headers\n3. Verified configuration with nginx -t\n4. Confirmed iptables rules intact</textarea>
+    </div>
+    <div class="form-section-title" style="margin-top:4px">Commands Executed</div>
+    <div class="form-code-field">${cmds || '# No commands executed yet'}</div>
+    <div class="form-section-title" style="margin-top:4px">Validation Evidence</div>
+    ${['nginx service returns 200 OK on health check endpoint','journalctl shows no errors post-restart','iptables rules verified intact','Load balancer health check passing'].map(item => `
+      <div class="checklist-item">
+        <input type="checkbox" id="chk-${item.slice(0,10)}" checked />
+        <label for="chk-${item.slice(0,10)}">${item}</label>
+      </div>`).join('')}
+    <div class="form-field" style="margin-top:8px">
+      <label>Additional Notes</label>
+      <textarea placeholder="Any additional context for the ERP record…" rows="2"></textarea>
+    </div>
+    <button class="btn-resolve" onclick="resolveTicket()">
+      <i class="ti ti-circle-check" style="font-size:15px;vertical-align:-2px;margin-right:6px" aria-hidden="true"></i>
+      Resolve & Close Ticket → POST /api/v1/activities/create
+    </button>
+  </div>`;
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  const pane = document.querySelector('.terminal-pane');
+  if (!pane) return;
+  const content = document.getElementById('tab-content');
+  const tabs = pane.querySelectorAll('.view-tab');
+  tabs.forEach(t => t.classList.toggle('active', t.textContent.trim().toLowerCase().includes(tab === 'terminal' ? 'agent' : 'doc')));
+  renderTabContent();
+  const steps = AGENT_STEPS[activeTicketId] || [];
+  const pendingStep = steps.find(s => s.status === 'pending_approval');
+  let panel = document.getElementById('action-panel');
+  if (pendingStep && tab === 'terminal' && !panel) {
+    const html = renderActionPanel(pendingStep);
+    pane.insertAdjacentHTML('beforeend', html);
+    startCountdown();
+  } else if (tab !== 'terminal' && panel) {
+    panel.remove();
+    clearInterval(countdownInterval);
+  }
+}
+
+function startCountdown() {
+  clearInterval(countdownInterval);
+  countdownVal = 30;
+  countdownInterval = setInterval(() => {
+    countdownVal--;
+    const bar = document.getElementById('countdown-bar');
+    const num = document.getElementById('countdown-num');
+    if (bar) bar.style.width = (countdownVal / 30 * 100) + '%';
+    if (num) num.textContent = countdownVal;
+    if (countdownVal <= 0) {
+      clearInterval(countdownInterval);
+      showToast('⏱ Timeout — command was not executed', 'warning');
+    }
+  }, 1000);
+}
+
+function approveStep() {
+  clearInterval(countdownInterval);
+  const steps = AGENT_STEPS[activeTicketId];
+  const idx = steps.findIndex(s => s.status === 'pending_approval');
+  if (idx === -1) return;
+  if (editingCommand) steps[idx].command = editCommandValue;
+  steps[idx].status = 'running';
+  editingCommand = false;
+  renderWorkspace();
+  showToast('✓ Command approved — executing via SSH runner', 'success');
+  setTimeout(() => {
+    steps[idx].status = 'completed';
+    steps[idx].output = 'nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful\nSynchronizing state of nginx.service...\nnginx.service started successfully';
+    renderWorkspace();
+    showToast('✓ Command completed successfully', 'success');
+  }, 2800);
+}
+
+function toggleEdit() {
+  const steps = AGENT_STEPS[activeTicketId];
+  const step = steps.find(s => s.status === 'pending_approval');
+  if (!step) return;
+  if (!editingCommand) {
+    editingCommand = true;
+    editCommandValue = step.command;
+  } else {
+    step.command = editCommandValue;
+    editingCommand = false;
+  }
+  renderWorkspace();
+}
+
+function rejectStep() {
+  clearInterval(countdownInterval);
+  const steps = AGENT_STEPS[activeTicketId];
+  const idx = steps.findIndex(s => s.status === 'pending_approval');
+  if (idx === -1) return;
+  steps[idx].status = 'rejected';
+  editingCommand = false;
+  renderWorkspace();
+  showToast('✗ Command rejected — agent recalculating plan', 'warning');
+}
+
+function resolveTicket() {
+  const t = TICKETS.find(t => t.id === activeTicketId);
+  if (t) t.status = 'DONE';
+  renderTickets();
+  showToast('✓ Ticket #' + activeTicketId + ' resolved — activity posted to ERP', 'success');
+  setTimeout(() => { selectTicket(activeTicketId); }, 500);
+}
+
+function resetEnv() {
+  const btn = document.getElementById('btn-reset');
+  btn.classList.add('loading');
+  btn.textContent = '⟳ Resetting…';
+  showToast('🔄 POST /api/v1/me/reset — environment resetting', 'info');
+  setTimeout(() => {
+    btn.classList.remove('loading');
+    btn.textContent = '⟳ Reset Environment';
+    showToast('✓ Environment reset complete', 'success');
+  }, 1800);
+}
+
+function showToast(msg, type) {
+  const c = document.getElementById('toast-container');
+  const colors = { success: 'var(--green)', warning: 'var(--orange)', info: 'var(--accent)', error: 'var(--red)' };
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.style.borderColor = colors[type] || 'var(--border2)';
+  t.style.color = colors[type] || 'var(--text)';
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+renderTickets();
+</script>

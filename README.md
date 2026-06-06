@@ -53,7 +53,7 @@ You also need **Docker** (Docker Desktop) and, for local dev, **Python 3.11+** a
 ## 3. Setup
 
 ```bash
-cp .env.example .env          # fill in the Phoenix URL+token (and your own LLM key, if any)
+cp .env .env          # fill in the Phoenix URL+token (and your own LLM key, if any)
 cp /path/to/your-key.pem keys/your-key.pem   # then set SSH_PRIVATE_KEY_PATH in .env
 ```
 

@@ -1,6 +1,6 @@
 # Secrets & keys — NEVER commit these
 .env
-keys/*
+keys/.gitkeep
 !keys/.gitkeep
 *.pem
 *.key
