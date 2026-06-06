@@ -1,155 +1,186 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import './index.css';
 
-// URL нашего бэкенда (из Docker или локальный)
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
-// Ключ доступа для фронтенда (как мы прописали в main.py)
 const USER_KEY = 'secret-react-user-key';
 
+// Логика сортировки (0 - самый критичный)
+const PRIORITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+// Временный хардкод тикетов (пока не подключите реальный ERP)
+const HARDCODED_TICKETS = [
+  { id: 1042, title: 'Web server nginx not responding', priority: 'CRITICAL', status: 'OPEN', customer_id: 201 },
+  { id: 1041, title: 'SSH authentication failures', priority: 'HIGH', status: 'OPEN', customer_id: 202 },
+  { id: 1039, title: 'DNS resolution intermittent', priority: 'MEDIUM', status: 'OPEN', customer_id: 204 },
+];
+
 export default function App() {
-  const [ticketId, setTicketId] = useState<number>(7001); // ID тестового тикета
-  const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>('http://localhost:5678/webhook/start-agent');
+  const [n8nWebhookUrl, setN8nWebhookUrl] = useState<string>('https://sflvr.app.n8n.cloud/webhook-test/troubleshoot-ticket');
+  const [tickets, setTickets] = useState(HARDCODED_TICKETS);
+  const [activeTicketId, setActiveTicketId] = useState<number | null>(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [proposal, setProposal] = useState<any>(null);
   const [editCommand, setEditCommand] = useState<string>('');
   const [logs, setLogs] = useState<string[]>([]);
 
-  // Цикл опроса (Polling): раз в 2 секунды спрашиваем бэкенд, есть ли предложения от ИИ
-  useEffect(() => {
-    if (!isRunning) return;
+  // СОРТИРОВКА: Автоматически сортируем по критичности
+  const sortedTickets = useMemo(() => {
+    return [...tickets].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+  }, [tickets]);
 
+  // Авто-выбор самого критичного тикета при загрузке
+  useEffect(() => {
+    if (sortedTickets.length > 0 && !activeTicketId) {
+      setActiveTicketId(sortedTickets[0].id);
+    }
+  }, [sortedTickets, activeTicketId]);
+
+  // Поллинг бэкенда на предмет новых команд от n8n
+  useEffect(() => {
+    if (!isRunning || !activeTicketId) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/proposal`, {
+        const res = await fetch(`${API_BASE}/api/tickets/${activeTicketId}/proposal`, {
           headers: { 'X-API-Key': USER_KEY }
         });
         const data = await res.json();
 
         if (data.status === 'needs_approval' && data.proposal) {
-          // Если ИИ прислал команду и мы ее еще не вывели на экран
           if (!proposal || proposal.original_command !== data.proposal.original_command) {
             setProposal(data.proposal);
-            setEditCommand(data.proposal.original_command); // Записываем команду в поле для редактирования
+            setEditCommand(data.proposal.original_command);
           }
         } else {
           setProposal(null);
         }
       } catch (e) {
-        console.error("Ошибка опроса бэкенда:", e);
+        console.error("Ошибка поллинга:", e);
       }
     }, 2000);
-
     return () => clearInterval(interval);
-  }, [isRunning, ticketId, proposal]);
+  }, [isRunning, activeTicketId, proposal]);
 
-  // 1. ЗАПУСК n8n
   const handleStartAgent = async () => {
     setIsRunning(true);
-    setLogs(prev => [...prev, `[SYSTEM] Запуск агента n8n для тикета #${ticketId}...`]);
-
+    setLogs([`[SYSTEM] Запуск ИИ-агента для тикета #${activeTicketId}...`]);
     try {
-      // Отправляем сигнал в самую первую ноду (Webhook) твоего n8n
       await fetch(n8nWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket_id: ticketId })
+        body: JSON.stringify({ ticket_id: activeTicketId })
       });
-      setLogs(prev => [...prev, `[SYSTEM] Агент запущен! Ожидание предложений...`]);
+      setLogs(p => [...p, `[SYSTEM] Агент работает. Ожидание диагностики...`]);
     } catch (e) {
-      setLogs(prev => [...prev, `[ERROR] Не удалось достучаться до n8n: ${e}`]);
+      setLogs(p => [...p, `[ERROR] Ошибка подключения к n8n: ${e}`]);
       setIsRunning(false);
     }
   };
 
-  // 2. ОДОБРЕНИЕ КОМАНДЫ (Approve)
   const handleApprove = async () => {
-    setLogs(prev => [...prev, `[HUMAN APPROVED] Выполняется: ${editCommand}`]);
-    setProposal(null); // Прячем панель кнопок
-
+    setLogs(p => [...p, `[HUMAN APPROVED] Выполняем: ${editCommand}`]);
+    setProposal(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/approve`, {
+      const res = await fetch(`${API_BASE}/api/tickets/${activeTicketId}/approve`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': USER_KEY
-        },
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': USER_KEY },
         body: JSON.stringify({ command: editCommand })
       });
       const data = await res.json();
-      setLogs(prev => [...prev, `[SERVER OUTPUT]\n${data.output}`]);
+      setLogs(p => [...p, `[SERVER OUTPUT]\n${data.output}`]);
     } catch (e) {
-      setLogs(prev => [...prev, `[ERROR] Ошибка выполнения: ${e}`]);
+      setLogs(p => [...p, `[ERROR] ${e}`]);
     }
   };
 
-  // 3. ОТКЛОНЕНИЕ КОМАНДЫ (Reject)
   const handleReject = async () => {
-    setLogs(prev => [...prev, `[HUMAN REJECTED] Команда отклонена.`]);
+    setLogs(p => [...p, `[HUMAN REJECTED] Команда отклонена. ИИ ищет другой путь...`]);
     setProposal(null);
-
-    try {
-      await fetch(`${API_BASE}/api/tickets/${ticketId}/reject`, {
-        method: 'POST',
-        headers: { 'X-API-Key': USER_KEY }
-      });
-    } catch (e) {
-      console.error(e);
-    }
+    await fetch(`${API_BASE}/api/tickets/${activeTicketId}/reject`, {
+      method: 'POST', headers: { 'X-API-Key': USER_KEY }
+    });
   };
+
+  const activeTicket = tickets.find(t => t.id === activeTicketId);
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 900, margin: "40px auto", padding: 24 }}>
-      <h1>AI Service Desk Autopilot 🤖</h1>
-      
-      {/* ПАНЕЛЬ НАСТРОЕК */}
-      <div style={{ background: '#f5f5f7', padding: 16, borderRadius: 8, marginBottom: 24 }}>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-          <input 
-            type="text" 
-            value={n8nWebhookUrl} 
-            onChange={e => setN8nWebhookUrl(e.target.value)} 
-            placeholder="URL Webhook'а из n8n"
-            style={{ flex: 1, padding: 8 }}
-          />
-          <input 
-            type="number" 
-            value={ticketId} 
-            onChange={e => setTicketId(Number(e.target.value))} 
-            style={{ width: 100, padding: 8 }}
-          />
-          <button 
-            onClick={handleStartAgent} 
-            disabled={isRunning}
-            style={{ padding: '8px 16px', background: '#007aff', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-          >
-            {isRunning ? 'Агент работает...' : 'Начать диагностику'}
-          </button>
-        </div>
+    <div className="app">
+      {/* Шапка */}
+      <div className="topbar">
+        <span className="topbar-logo">techbold <span>· autopilot</span></span>
+        <span className="topbar-pill">AI AGENT</span>
+        <input
+          style={{marginLeft: 20, width: 350, padding: '4px 8px', borderRadius: 4, border: '1px solid #333', background: '#1a1f2e', color: 'white'}}
+          value={n8nWebhookUrl} onChange={e => setN8nWebhookUrl(e.target.value)} placeholder="n8n Webhook URL"
+        />
       </div>
 
-      {/* ПАНЕЛЬ ОЖИДАНИЯ АПРУВА (Появляется только когда ИИ прислал команду) */}
-      {proposal && (
-        <div style={{ background: '#ffe58f', padding: 16, borderRadius: 8, border: '2px solid #faad14', marginBottom: 24 }}>
-          <h3 style={{ marginTop: 0 }}>⚠️ Агент (Этап: {proposal.stage}) предлагает команду:</h3>
-          <input 
-            type="text" 
-            value={editCommand} 
-            onChange={e => setEditCommand(e.target.value)} 
-            style={{ width: '100%', padding: 12, fontSize: '16px', fontFamily: 'monospace', marginBottom: 12 }}
-          />
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={handleApprove} style={{ background: '#52c41a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}>✅ Разрешить (Approve)</button>
-            <button onClick={handleReject} style={{ background: '#ff4d4f', color: 'white', border: 'none', padding: '10px 20px', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}>❌ Запретить (Reject)</button>
+      <div className="main">
+        {/* Левая панель: Список тикетов */}
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <div className="sidebar-title">Ticket Queue (Sorted by Priority)</div>
+          </div>
+          <div className="ticket-list">
+            {sortedTickets.map(t => (
+              <div key={t.id} className={`ticket-item ${t.id === activeTicketId ? 'active' : ''}`} onClick={() => { setActiveTicketId(t.id); setLogs([]); setIsRunning(false); setProposal(null); }}>
+                <div className="ticket-row1">
+                  <span className="ticket-id">#{t.id}</span>
+                  <span className={`priority-dot ${t.priority}`}></span>
+                  <span className="ticket-title">{t.title}</span>
+                </div>
+                <div className="ticket-row2">
+                  <span className={`status-badge ${t.status}`}>{t.status}</span>
+                  <span style={{fontSize: 10, color: '#8892a4'}}>{t.priority}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* ТЕРМИНАЛ (Логи) */}
-      <div style={{ background: '#1e1e1e', color: '#00ff00', padding: 16, borderRadius: 8, height: 400, overflowY: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        {logs.length === 0 ? "Ожидание действий..." : logs.map((log, idx) => (
-          <div key={idx} style={{ marginBottom: 8 }}>{log}</div>
-        ))}
+        {/* Правая панель: Рабочая область */}
+        <div className="workspace">
+          {/* Детали тикета */}
+          <div className="ticket-detail">
+            <div className="detail-section">
+              <div className="detail-label">Ticket Details</div>
+              <div style={{fontSize: 14, fontWeight: 'bold', marginBottom: 10}}>{activeTicket?.title}</div>
+              <button onClick={handleStartAgent} disabled={isRunning} style={{width: '100%', padding: '8px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold'}}>
+                {isRunning ? '🤖 Агент работает...' : '▶ Запустить ИИ'}
+              </button>
+            </div>
+          </div>
+
+          {/* Терминал */}
+          <div className="terminal-pane">
+            <div className="terminal-header">
+              <div style={{flex: 1, fontSize: 12, color: '#8892a4', fontWeight: 'bold'}}>Agent Console</div>
+            </div>
+
+            <div className="terminal-body">
+              {logs.length === 0 ? "Выберите тикет и нажмите 'Запустить ИИ'..." : logs.map((log, i) => (
+                <div key={i} style={{marginBottom: 8}}>{log}</div>
+              ))}
+            </div>
+
+            {/* Панель подтверждения команд (появляется только когда n8n присылает команду) */}
+            {proposal && (
+              <div className="action-panel">
+                <div style={{color: '#f97316', fontSize: 12, fontWeight: 'bold', marginBottom: 10}}>⚠️ ИИ предлагает выполнить команду (Этап: {proposal.stage}):</div>
+                <input
+                  className="action-input"
+                  value={editCommand}
+                  onChange={e => setEditCommand(e.target.value)}
+                />
+                <div className="action-buttons">
+                  <button className="btn-action btn-approve" onClick={handleApprove}>✅ Разрешить (Approve)</button>
+                  <button className="btn-action btn-reject" onClick={handleReject}>❌ Отклонить (Reject)</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
