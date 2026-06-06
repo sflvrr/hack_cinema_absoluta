@@ -6,6 +6,8 @@ from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import os
+import glob
 
 # Настраиваем базовое логирование, чтобы видеть ошибки в консоли Docker
 logging.basicConfig(level=logging.INFO)
@@ -67,25 +69,47 @@ def run_ssh_command(ip: str, command: str) -> str:
     if any(bad in command for bad in dangerous_keywords):
         return "BLOCKED BY SAFETY LAYER: Dangerous command detected."
 
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Находим ВСЕ файлы с расширением .pem в папке /keys/
+    key_files = glob.glob("/keys/*.pem")
 
-        # Подключаемся с приватным ключом из папки /keys/
-        # Убедитесь, что файл называется именно так, как указано здесь
-        key = paramiko.RSAKey.from_private_key_file("/keys/your-key.pem")
+    if not key_files:
+        return "SSH Error: Файлы ключей (.pem) не найдены в папке /keys/"
 
-        # Установлен timeout, чтобы бэкенд не завис намертво, если виртуалка недоступна
-        client.connect(hostname=ip, username="azureuser", pkey=key, timeout=10)
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        stdin, stdout, stderr = client.exec_command(command, timeout=30)
-        output = stdout.read().decode('utf-8') + stderr.read().decode('utf-8')
-        client.close()
+    last_error = ""
 
-        return output if output.strip() else "[Command executed successfully, no output]"
-    except Exception as e:
-        logger.error(f"SSH Error: {str(e)}")
-        return f"SSH Connection Error: {str(e)}"
+    # Перебираем все ключи по очереди
+    for key_path in key_files:
+        try:
+            logger.info(f"Попытка подключения к {ip} с ключом {key_path}...")
+            key = paramiko.RSAKey.from_private_key_file(key_path)
+
+            # Пробуем подключиться (таймаут 10 секунд)
+            client.connect(hostname=ip, username="azureuser", pkey=key, timeout=10)
+
+            # Если код дошел сюда — ключ подошел! Выполняем команду.
+            logger.info(f"Успешное подключение к {ip}! Выполняем команду...")
+            stdin, stdout, stderr = client.exec_command(command, timeout=30)
+            output = stdout.read().decode('utf-8') + stderr.read().decode('utf-8')
+            client.close()
+
+            return output if output.strip() else "[Command executed successfully, no output]"
+
+        except paramiko.AuthenticationException:
+            # Если ключ не подошел, ловим ошибку авторизации и пробуем следующий ключ
+            last_error = f"Auth failed with {os.basename(key_path)}"
+            continue
+
+        except Exception as e:
+            # Если ошибка не связана с ключом (например, виртуалка выключена или IP не пингуется)
+            # нет смысла перебирать остальные ключи. Выходим с ошибкой.
+            logger.error(f"SSH Critical Error for IP {ip}: {str(e)}")
+            return f"SSH Connection Error: {str(e)}"
+
+    # Если цикл завершился и ни один ключ не подошел
+    return f"SSH Connection Error: Could not authenticate with any key. Last error: {last_error}"
 
 
 # ==========================================
