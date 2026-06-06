@@ -1,0 +1,3 @@
+/* Minimal reset — style the app however you like. */
+* { box-sizing: border-box; }
+body { margin: 0; background: #fff; color: #1d1d1f; }

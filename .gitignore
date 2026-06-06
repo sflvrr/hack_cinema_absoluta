@@ -1,0 +1,24 @@
+# Secrets & keys — NEVER commit these
+.env
+keys/*
+!keys/.gitkeep
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

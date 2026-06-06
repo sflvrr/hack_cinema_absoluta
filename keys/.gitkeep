@@ -1,0 +1,2 @@
+# Put your SSH private key (.pem) here and point SSH_PRIVATE_KEY_PATH at it.
+# This folder is git-ignored — never commit private keys.
