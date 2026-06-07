@@ -1,49 +1,54 @@
 import os
 import sys
-import glob
 import asyncio
-import paramiko
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
-# --- 1. ПРИНУДИТЕЛЬНО ГРУЗИМ ТОКЕНЫ ИЗ .env ---
+# --- 1. Грузим .env ПЕРВЫМ делом, чтобы токены были доступны при импорте erp ---
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- 2. ПОДГРУЖАЕМ ERP (ТЕПЕРЬ ТОКЕНЫ ТОЧНО ЕСТЬ) ---
-# Добавляем корневую папку backend в пути, чтобы main.py увидел erp.py
+# --- 2. Импорт ERP-клиента (поддержка запуска и как пакет, и как скрипт) ---
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from erp import list_tickets
+    from app import erp
+    from app.ssh_runner import run_ssh_command
+    from app.safety import check_command
 except ImportError:
-    from .erp import list_tickets
+    from . import erp
+    from .ssh_runner import run_ssh_command
+    from .safety import check_command
 
+import httpx
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Настраиваем базовое логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Service Desk Autopilot - Backend")
 
-# Открываем CORS для React фронтенда
+# CORS: по умолчанию только фронтенд; можно расширить через ALLOWED_ORIGINS.
+_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _origins if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- АВТОРИЗАЦИЯ ---
+# --- АВТОРИЗАЦИЯ (ключи из окружения, с дефолтами для локалки) ---
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
 
-ADMIN_KEY = "secret-n8n-admin-key"
-USER_KEY = "secret-react-user-key"
+ADMIN_KEY = os.getenv("BACKEND_ADMIN_KEY", "dev-admin-key")
+USER_KEY = os.getenv("BACKEND_USER_KEY", "dev-user-key")
+
+# Сколько секунд держим HTTP-запрос от n8n в ожидании решения техника.
+APPROVAL_WAIT_TIMEOUT = int(os.getenv("APPROVAL_WAIT_TIMEOUT", "600"))
 
 
 def verify_admin(api_key: str = Security(api_key_header)):
@@ -53,7 +58,7 @@ def verify_admin(api_key: str = Security(api_key_header)):
 
 
 def verify_user(api_key: str = Security(api_key_header)):
-    if api_key not in [ADMIN_KEY, USER_KEY]:
+    if api_key not in (ADMIN_KEY, USER_KEY):
         raise HTTPException(status_code=403, detail="Access denied.")
     return api_key
 
@@ -63,6 +68,12 @@ active_proposals: Dict[int, Dict[str, Any]] = {}
 approval_events: Dict[int, asyncio.Event] = {}
 execution_results: Dict[int, str] = {}
 audit_logs: Dict[int, List[Dict[str, Any]]] = {}
+
+
+def _cleanup_ticket_state(ticket_id: int) -> None:
+    """Чистим всё временное состояние по тикету (proposal + event)."""
+    active_proposals.pop(ticket_id, None)
+    approval_events.pop(ticket_id, None)
 
 
 # --- СХЕМЫ ДАННЫХ (Pydantic) ---
@@ -76,44 +87,27 @@ class ApproveRequest(BaseModel):
     command: str
 
 
-# --- УТИЛИТА: ВЫПОЛНЕНИЕ SSH ---
-def run_ssh_command(ip: str, command: str) -> str:
-    dangerous_keywords = ["rm -rf /", "chmod -R 777", "mkfs"]
-    if any(bad in command for bad in dangerous_keywords):
-        return "BLOCKED BY SAFETY LAYER: Dangerous command detected."
+class StatusRequest(BaseModel):
+    status: str
 
-    key_files = glob.glob("/keys/*.pem")
-    if not key_files:
-        # Если запускаешь локально без докера, попробуй поискать ключи в текущей папке
-        key_files = glob.glob("keys/*.pem")
-        if not key_files:
-            return "SSH Error: Файлы ключей (.pem) не найдены в папке keys/"
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+class ActivityRequest(BaseModel):
+    ticket_id: int
+    start_datetime: str
+    end_datetime: str
+    summary: Optional[str] = None
+    root_cause: Optional[str] = None
+    actions_taken: Optional[str] = None
+    commands_summary: Optional[str] = None
+    validation_result: Optional[str] = None
+    description: Optional[str] = None
 
-    last_error = ""
 
-    for key_path in key_files:
-        try:
-            logger.info(f"Попытка подключения к {ip} с ключом {key_path}...")
-            key = paramiko.RSAKey.from_private_key_file(key_path)
-            client.connect(hostname=ip, username="azureuser", pkey=key, timeout=10)
-
-            logger.info(f"Успешное подключение к {ip}! Выполняем команду...")
-            stdin, stdout, stderr = client.exec_command(command, timeout=30)
-            output = stdout.read().decode('utf-8') + stderr.read().decode('utf-8')
-            client.close()
-            return output if output.strip() else "[Command executed successfully, no output]"
-
-        except paramiko.AuthenticationException:
-            last_error = f"Auth failed with {os.basename(key_path)}"
-            continue
-        except Exception as e:
-            logger.error(f"SSH Critical Error for IP {ip}: {str(e)}")
-            return f"SSH Connection Error: {str(e)}"
-
-    return f"SSH Connection Error: Could not authenticate with any key. Last error: {last_error}"
+def _erp_error(e: Exception) -> HTTPException:
+    """Преобразуем ошибку httpx в аккуратный HTTP-ответ наружу."""
+    if isinstance(e, httpx.HTTPStatusError):
+        return HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    return HTTPException(status_code=502, detail=f"ERP error: {e}")
 
 
 # ==========================================
@@ -125,37 +119,103 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/me")
+async def get_me(api_key: str = Depends(verify_user)):
+    try:
+        return {"status": "ok", "me": await erp.get_me()}
+    except Exception as e:
+        logger.error(f"ERP /me error: {e}")
+        raise _erp_error(e)
+
+
 @app.get("/api/tickets")
 async def get_all_tickets(api_key: str = Depends(verify_user)):
-    """Фронтенд запрашивает этот эндпоинт, чтобы получить реальные тикеты из ERP"""
+    """Список тикетов из ERP (для фронтенда)."""
     try:
-        tickets = await list_tickets()
+        tickets = await erp.list_tickets()
         return {"status": "ok", "tickets": tickets}
     except Exception as e:
         logger.error(f"Ошибка получения тикетов из ERP: {e}")
         return {"status": "error", "tickets": [], "detail": str(e)}
 
 
+@app.get("/api/tickets/{ticket_id}/customer-system")
+async def customer_system(ticket_id: int, api_key: str = Depends(verify_user)):
+    """SSH-таргет тикета (ip/port/username/os). Зовётся и фронтом, и n8n."""
+    try:
+        return await erp.get_customer_system(ticket_id)
+    except Exception as e:
+        logger.error(f"ERP customer-system error: {e}")
+        raise _erp_error(e)
+
+
+@app.patch("/api/tickets/{ticket_id}/status")
+async def set_status(ticket_id: int, req: StatusRequest, api_key: str = Depends(verify_user)):
+    """Смена статуса тикета в ERP (OPEN/PENDING/DONE)."""
+    try:
+        return await erp.patch_ticket_status(ticket_id, req.status)
+    except Exception as e:
+        logger.error(f"ERP status error: {e}")
+        raise _erp_error(e)
+
+
+@app.post("/api/activities/create")
+async def create_activity(req: ActivityRequest, api_key: str = Depends(verify_user)):
+    """Финальный лог работ -> ERP. Пустые поля не отправляем."""
+    payload = {k: v for k, v in req.model_dump().items() if v is not None}
+    try:
+        return await erp.create_activity(payload)
+    except Exception as e:
+        logger.error(f"ERP create_activity error: {e}")
+        raise _erp_error(e)
+
+
+@app.post("/api/reset")
+async def reset(api_key: str = Depends(verify_admin)):
+    """Сброс активностей и ребут VM (только admin)."""
+    try:
+        return await erp.reset_me()
+    except Exception as e:
+        logger.error(f"ERP reset error: {e}")
+        raise _erp_error(e)
+
+
 @app.post("/api/runs/propose-{stage}")
 async def propose_command(stage: str, req: ProposeRequest, api_key: str = Depends(verify_admin)):
+    """
+    n8n предлагает команду и «замирает» здесь до решения техника.
+    Если за APPROVAL_WAIT_TIMEOUT секунд никто не ответил — возвращаем таймаут
+    и чистим состояние, чтобы не осталась протухшая команда.
+    """
     ticket_id = req.ticket_id
+
+    # Превентивная safety-проверка — чтобы заведомо опасное даже не показывать.
+    allowed, reason = check_command(req.command)
+
     active_proposals[ticket_id] = {
         "stage": stage,
         "original_command": req.command,
-        "target_ip": req.target_ip
+        "target_ip": req.target_ip,
+        "safety_ok": allowed,
+        "safety_reason": reason,
     }
     event = asyncio.Event()
     approval_events[ticket_id] = event
-    if ticket_id not in audit_logs:
-        audit_logs[ticket_id] = []
+    audit_logs.setdefault(ticket_id, [])
 
-    await event.wait()
+    try:
+        await asyncio.wait_for(event.wait(), timeout=APPROVAL_WAIT_TIMEOUT)
+    except asyncio.TimeoutError:
+        _cleanup_ticket_state(ticket_id)
+        execution_results.pop(ticket_id, None)
+        return {"output": "TIMEOUT: технику не дали подтверждение вовремя.", "timed_out": True}
+
     result = execution_results.pop(ticket_id, "No result")
     return {"output": result}
 
 
 @app.get("/api/tickets/{ticket_id}/audit-log")
-async def get_audit_log(ticket_id: int, api_key: str = Depends(verify_admin)):
+async def get_audit_log(ticket_id: int, api_key: str = Depends(verify_user)):
     return {"log": audit_logs.get(ticket_id, [])}
 
 
@@ -180,15 +240,15 @@ async def approve_command(ticket_id: int, req: ApproveRequest, api_key: str = De
     final_command = req.command
     ssh_output = run_ssh_command(target_ip, final_command)
 
-    audit_logs[ticket_id].append({
+    audit_logs.setdefault(ticket_id, []).append({
         "stage": proposal["stage"],
         "ai_proposed": proposal["original_command"],
         "human_executed": final_command,
-        "output": ssh_output
+        "output": ssh_output,
     })
 
     execution_results[ticket_id] = ssh_output
-    del active_proposals[ticket_id]
+    _cleanup_ticket_state(ticket_id)
     event.set()
     return {"status": "executed", "output": ssh_output}
 
@@ -196,10 +256,17 @@ async def approve_command(ticket_id: int, req: ApproveRequest, api_key: str = De
 @app.post("/api/tickets/{ticket_id}/reject")
 async def reject_command(ticket_id: int, api_key: str = Depends(verify_user)):
     proposal = active_proposals.get(ticket_id)
-    if not proposal or ticket_id not in approval_events:
+    event = approval_events.get(ticket_id)
+    if not proposal or not event:
         raise HTTPException(status_code=404, detail="No active proposal")
 
     execution_results[ticket_id] = "HUMAN REJECTED THIS COMMAND. Propose a different approach."
-    del active_proposals[ticket_id]
-    approval_events[ticket_id].set()
+    audit_logs.setdefault(ticket_id, []).append({
+        "stage": proposal["stage"],
+        "ai_proposed": proposal["original_command"],
+        "human_executed": None,
+        "output": "REJECTED BY HUMAN",
+    })
+    _cleanup_ticket_state(ticket_id)
+    event.set()
     return {"status": "rejected"}
