@@ -214,6 +214,31 @@ async def propose_command(stage: str, req: ProposeRequest, api_key: str = Depend
     return {"output": result}
 
 
+class StartRunRequest(BaseModel):
+    ticket_id: int
+    webhook_url: str
+
+
+@app.post("/api/runs/start")
+async def start_run(req: StartRunRequest, api_key: str = Depends(verify_user)):
+    """
+    Прокси: фронт зовёт этот эндпоинт, бэкенд POST'ит в n8n webhook.
+    Server-to-server -> никакого CORS, в отличие от запроса из браузера.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)) as client:
+            resp = await client.post(req.webhook_url, json={"ticket_id": req.ticket_id})
+            resp.raise_for_status()
+            body = resp.json() if resp.content else None
+        return {"status": "started", "n8n_response": body}
+    except httpx.HTTPStatusError as e:
+        logger.error(f"n8n webhook вернул ошибку: {e.response.status_code} {e.response.text}")
+        raise HTTPException(status_code=502, detail=f"n8n ответил {e.response.status_code}: {e.response.text}")
+    except Exception as e:
+        logger.error(f"Не удалось вызвать n8n webhook: {e}")
+        raise HTTPException(status_code=502, detail=f"Не удалось достучаться до n8n: {e}")
+
+
 @app.get("/api/tickets/{ticket_id}/audit-log")
 async def get_audit_log(ticket_id: int, api_key: str = Depends(verify_user)):
     return {"log": audit_logs.get(ticket_id, [])}
